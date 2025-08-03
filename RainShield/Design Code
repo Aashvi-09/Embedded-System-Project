@@ -1,0 +1,73 @@
+#include <ESP32Servo.h>
+#include <Wire.h>
+#include <LiquidCrystal.h>
+
+const int cols = 16;
+const int rows = 2;
+
+LiquidCrystal lcd(21, 22, 19, 18, 5, 4);
+
+Servo myServo;
+const int rainPin  = 13;
+const int servoPin = 14;
+bool Deployed = false;
+
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(115200);
+  Serial.println("Hello, ESP32!");
+  lcd.begin(cols, rows);
+  myServo.attach(servoPin);
+  pinMode(rainPin, INPUT_PULLUP);
+
+  lcd.print("AUTOMATIC RAIN DETECTION SYSTEM");
+  delay(1500);
+
+}
+
+void loop() {
+  bool rainDetect = digitalRead(rainPin) == LOW;
+
+  if(rainDetect && !Deployed){
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Rain Alert");
+    lcd.setCursor(0,1);
+    delay(1000);
+    lcd.print("Deploying...");
+    myServo.write(90);
+    delay(1000);
+    Deployed = true;
+    lcd.clear();
+    lcd.setCursor(0,1);
+    lcd.print("Deployed");
+    delay(2000);
+  }
+  else if(rainDetect && Deployed){
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Rain Alert");
+    lcd.setCursor(0,1);
+    lcd.print("Already Deployed");
+    // myServo.write(0);
+    // delay(1000);
+    Deployed = true;
+  }
+  else if(!rainDetect && Deployed){
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("No Rain");
+    myServo.write(0);
+    delay(1000);
+    Deployed = false;
+  }
+  else{
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("No Rain");
+    myServo.write(0);
+    delay(1000);
+    Deployed = false;
+  }
+}
