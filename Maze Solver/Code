@@ -1,1 +1,184 @@
+// --- Pin Definitions ---
+const int trigF = 12, echoF = 26; 
+const int trigL = 13, echoL = 27;
+const int trigR = 14, echoR = 25;
 
+const int m1P1 = 19, m1P2 = 18, enA = 4; 
+const int m2P1 = 32, m2P2 = 33, enB = 23; 
+const int buttonPin = 0; 
+
+// --- Variables ---
+String path = ""; 
+bool round2 = false;
+int pathIndex = 0;
+int speed = 150; 
+
+// --- Calibration (wallDist is now dynamic) ---
+const int turnTime90 = 500;    
+const int turnTime180 = 1000;  
+const int junctionDelay = 600; 
+int wallDist = 15; // This will be updated in setup()
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(trigF, OUTPUT); pinMode(echoF, INPUT);
+  pinMode(trigL, OUTPUT); pinMode(echoL, INPUT);
+  pinMode(trigR, OUTPUT); pinMode(echoR, INPUT);
+  pinMode(m1P1, OUTPUT); pinMode(m1P2, OUTPUT); pinMode(enA, OUTPUT);
+  pinMode(m2P1, OUTPUT); pinMode(m2P2, OUTPUT); pinMode(enB, OUTPUT);
+
+  Serial.println("--- AUTO-CALIBRATION STARTING ---");
+  Serial.println("Place bot in the center of the start corridor...");
+  
+  // Give you 3 seconds to place the bot perfectly
+  delay(3000); 
+  
+  runAutoCalibration();
+  
+  Serial.println("RIGHT-HAND MAZE SOLVER READY");
+}
+
+// New Function: Measures the maze at the start line
+void runAutoCalibration() {
+  long dL = getDistance(trigL, echoL);
+  long dR = getDistance(trigR, echoR);
+  
+  Serial.print("Initial Readings -> L: "); Serial.print(dL);
+  Serial.print(" R: "); Serial.println(dR);
+
+  // We set the threshold to be roughly 1.5x the distance to the side wall
+  // If the wall is at 10cm, any reading > 20cm is likely an opening
+  if (dR > 2 && dR < 40) {
+    wallDist = dR + 12; 
+    Serial.print("Calibrated wallDist set to: "); Serial.println(wallDist);
+  } else {
+    Serial.println("Calibration failed/outside range. Using default: 25");
+    wallDist = 25;
+  }
+}
+
+void loop() {
+  if (digitalRead(buttonPin) == LOW) {
+    delay(1000); 
+    round2 = true;
+    pathIndex = 0;
+    Serial.println("ROUND 2: SPEED RUN MODE");
+  }
+
+  if (!round2) {
+    solveMaze(); 
+  } else {
+    followPath(); 
+  }
+}
+
+// --- Round 1: Discovery (Right-Hand Rule) ---
+void solveMaze() {
+  long dF = getDistance(trigF, echoF);
+  long dL = getDistance(trigL, echoL);
+  long dR = getDistance(trigR, echoR);
+
+  // Priority: Right > Straight > Left > Back
+  if (dR > wallDist && dR < 150) {          
+    Serial.println("Found Right Opening");
+    timedTurn('R');
+    path += "R";
+    simplifyPath();
+    nudgeForward(); 
+  } 
+  else if (dF > 7 && dF < 150) {  
+    moveForward();
+  } 
+  else if (dL > wallDist && dL < 150) {  
+    Serial.println("Found Left Opening");
+    timedTurn('L');
+    path += "L";
+    simplifyPath();
+    nudgeForward(); 
+  } 
+  else {               
+    Serial.println("Dead End - Turning Back");
+    timedTurn('B');
+    path += "B";
+    simplifyPath();
+  }
+}
+
+// (The rest of your functions: followPath, simplifyPath, timedTurn, nudgeForward, moveForward, stopBot, getDistance)
+// (Copy them exactly as you had them in your previous code)
+
+void followPath() {
+  if (pathIndex >= path.length()) { stopBot(); return; }
+  char move = path[pathIndex];
+  if (move == 'L') { timedTurn('L'); nudgeForward(); }
+  else if (move == 'R') { timedTurn('R'); nudgeForward(); }
+  else if (move == 'S') { nudgeForward(); }
+  pathIndex++;
+}
+
+void simplifyPath() {
+  int n = path.length();
+  if (n < 3 || path[n-2] != 'B') return;
+  String sub = path.substring(n-3, n);
+  String replacement = "";
+  if (sub == "RBR") replacement = "S"; 
+  else if (sub == "RBS") replacement = "L"; 
+  else if (sub == "SBR") replacement = "L"; 
+  else if (sub == "RBL") replacement = "B"; 
+  else if (sub == "LBR") replacement = "B"; 
+  else if (sub == "SBL") replacement = "R"; 
+  if (replacement != "") { path = path.substring(0, n-3) + replacement; }
+}
+
+void timedTurn(char dir) {
+  stopBot();
+  delay(200);
+  if (dir == 'L') {
+    digitalWrite(m1P1, HIGH); digitalWrite(m1P2, LOW);
+    digitalWrite(m2P1, LOW);  digitalWrite(m2P2, HIGH);
+    analogWrite(enA, speed);  analogWrite(enB, speed);
+    delay(turnTime90);
+  } 
+  else if (dir == 'R') {
+    digitalWrite(m1P1, LOW);  digitalWrite(m1P2, HIGH);
+    digitalWrite(m2P1, HIGH); digitalWrite(m2P2, LOW);
+    analogWrite(enA, speed);  analogWrite(enB, speed);
+    delay(turnTime90);
+  }
+  else if (dir == 'B') {
+    digitalWrite(m1P1, LOW);  digitalWrite(m1P2, HIGH);
+    digitalWrite(m2P1, HIGH); digitalWrite(m2P2, LOW);
+    analogWrite(enA, speed);  analogWrite(enB, speed);
+    delay(turnTime180);
+  }
+  stopBot();
+}
+
+void nudgeForward() {
+  moveForward();
+  delay(junctionDelay); 
+  stopBot();
+}
+
+void moveForward() {
+  digitalWrite(m1P1, HIGH); digitalWrite(m1P2, LOW);
+  digitalWrite(m2P1, HIGH); digitalWrite(m2P2, LOW);
+  analogWrite(enA, speed); analogWrite(enB, speed);
+}
+
+void stopBot() {
+  digitalWrite(m1P1, LOW); digitalWrite(m1P2, LOW);
+  digitalWrite(m2P1, LOW); digitalWrite(m2P2, LOW);
+  analogWrite(enA, 0); analogWrite(enB, 0);
+}
+
+long getDistance(int t, int e) {
+  digitalWrite(t, LOW); delayMicroseconds(2);
+  digitalWrite(t, HIGH); delayMicroseconds(10);
+  digitalWrite(t, LOW);
+  long dur = pulseIn(e, HIGH, 20000); 
+  if (dur == 0) return 2; 
+  long dist = dur * 0.034 / 2;
+  return dist;
+}
